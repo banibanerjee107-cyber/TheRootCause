@@ -323,3 +323,152 @@ async def health():
     finally:
         if conn:
             conn.close()
+from dotenv import load_dotenv
+load_dotenv()  # This loads the environment variables instantly
+import math
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+PORT = 3006
+
+# Simulated active database tracking existing verified issues
+EXISTING_ISSUES_DATABASE = [
+    {
+        "id": 501,
+        "location_name": "Binod Nagar Main Road",
+        "description": "Large road pothole causing traffic alignment cracks.",
+        "latitude": 23.80410,
+        "longitude": 86.43120,
+        "linked_duplicates": []
+    }
+]
+
+# Helper Function: Calculates exact distance between two GPS points in meters (Haversine Formula)
+def calculate_geographical_distance(lat1, lon1, lat2, lon2):
+    R = 6371000  # Radius of the earth in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = math.sin(delta_phi / 2) * math.sin(delta_phi / 2) + \
+        math.cos(phi1) * math.cos(phi2) * \
+        math.sin(delta_lambda / 2) * math.sin(delta_lambda / 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c  # Returns distance in meters
+
+# --- ROUTE 1: EVALUATE NEW SUBMISSION FOR PROXIMITY CLUBBING MATCHES ---
+@app.route('/api/v1/issues/clubbing-check', methods=['POST'])
+def check_issue_proximity_clubbing():
+    try:
+        payload = request.get_json()
+        
+        if not payload or 'latitude' not in payload or 'longitude' not in payload:
+            return jsonify({"status": "FAILED", "error": "Missing tracking coordinates input parameters."}), 400
+            
+        new_lat = float(payload['latitude'])
+        new_lng = float(payload['longitude'])
+        new_desc = payload.get('description', 'No description provided.')
+        
+        PROXIMITY_THRESHOLD_METERS = 15.0  # Strict PRD boundary check rule
+        matched_parent_ticket = None
+
+        # Loop through existing database entries to calculate distance parameters
+        for issue in EXISTING_ISSUES_DATABASE:
+            distance = calculate_geographical_distance(new_lat, new_lng, issue['latitude'], issue['longitude'])
+            
+            if distance <= PROXIMITY_THRESHOLD_METERS:
+                matched_parent_ticket = issue
+                break
+
+        if matched_parent_ticket:
+            duplicate_id = len(matched_parent_ticket['linked_duplicates']) + 1
+            duplicate_entry = {
+                "duplicate_sequence_id": duplicate_id,
+                "description": new_desc,
+                "distance_from_parent_meters": round(distance, 2)
+            }
+            matched_parent_ticket['linked_duplicates'].append(duplicate_entry)
+            
+            return jsonify({
+                "status": "CLUBBED",
+                "message": f"Duplicate detected within {round(distance, 2)} meters. Ticket linked to master thread container.",
+                "master_ticket_id": matched_parent_ticket['id'],
+                "master_location": matched_parent_ticket['location_name']
+            }), 200
+
+        new_ticket_id = len(EXISTING_ISSUES_DATABASE) + 501
+        new_master_ticket = {
+            "id": new_ticket_id,
+            "location_name": "New Unmapped Coordinate Area Zone",
+            "description": new_desc,
+            "latitude": new_lat,
+            "longitude": new_lng,
+            "linked_duplicates": []
+        }
+        EXISTING_ISSUES_DATABASE.append(new_master_ticket)
+
+        return jsonify({
+            "status": "UNIQUE",
+            "message": "No matching close duplicates found. Created a fresh master report ticket identifier flag.",
+            "new_ticket_id": new_ticket_id
+        }), 201
+
+    except Exception as runtime_error:
+        return jsonify({"status": "ERROR", "error": str(runtime_error)}), 500
+
+# Interactive HTML Dashboard Interface Panel view for Row 10 Validation
+@app.route('/')
+def local_clubbing_dashboard():
+    return '''
+        <div style="font-family: sans-serif; max-width: 550px; margin: 40px auto; padding: 30px; border: 1px solid #6f42c1; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
+            <h2 style="color: #6f42c1; margin-top: 0;">🔀 Problem Clubbing Proximity Dashboard</h2>
+            <p style="color: #666;">Simulating duplicate neighborhood report verification matching tracking metrics for Row 10.</p>
+            <hr style="border: 0; border-top: 1px solid #e9ecef; margin: 20px 0;"/>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #6f42c1; font-size: 14px; line-height: 1.5;">
+                <b style="color: #333; display: block; margin-bottom: 5px;">📍 Active Master Ticket in Database (Binod Nagar):</b>
+                <b>Latitude:</b> 23.80410 | <b>Longitude:</b> 86.43120<br/>
+                <span style="color: #666;">PRD Cluster Boundary Rules Check: Merges duplicates within 15 meters!</span>
+            </div>
+
+            <form action="/api/v1/issues/clubbing-check" method="POST" onsubmit="runClubbingCheck(event)">
+                <label style="display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px;">Enter New Report Latitude:</label>
+                <input type="text" id="geoLat" value="23.80415" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 15px; box-sizing: border-box;" required />
+
+                <label style="display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px;">Enter New Report Longitude:</label>
+                <input type="text" id="geoLng" value="86.43125" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 15px; box-sizing: border-box;" required />
+
+                <p style="font-size: 12px; color: #6f42c1; margin-top: -5px; font-weight: bold;">💡 Tip: The default coordinates above are just 7 meters away from our master ticket (Should CLUB!).</p>
+
+                <label style="display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px;">Problem Report Description:</label>
+                <textarea id="geoDesc" style="width: 100%; height: 60px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 25px; box-sizing: border-box;" required>Pothole expansion issue reported by different neighbor account handle.</textarea>
+
+                <button type="submit" style="width: 100%; background: #6f42c1; color: white; border: none; padding: 12px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 15px;">
+                    Analyze Proximity Match Parameters
+                </button>
+            </form>
+        </div>
+
+        <script>
+        async function runClubbingCheck(e) {
+            e.preventDefault();
+            const response = await fetch('/api/v1/issues/clubbing-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    latitude: document.getElementById('geoLat').value,
+                    longitude: document.getElementById('geoLng').value,
+                    description: document.getElementById('geoDesc').value
+                })
+            });
+            const data = await response.json();
+            document.body.innerHTML = `<pre style="padding:20px; background:#212529; color:#f8f9fa; border-radius:6px; max-width:600px; margin:40px auto; overflow:auto; font-weight: bold;">\${JSON.stringify(data, null, 2)}</pre>`;
+        }
+        </script>
+    '''
+
+if __name__ == '__main__':
+    print(f"[CLUBBING-SERVICE] Proximity evaluation core initialized on port: {PORT}")
+    app.run(port=PORT)
