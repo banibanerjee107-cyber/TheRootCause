@@ -323,3 +323,120 @@ async def health():
     finally:
         if conn:
             conn.close()
+import time
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+PORT = 3007
+
+# Simulated database containing local issue posts with interaction logs
+POSTS_DATABASE = [
+    {
+        "id": 1,
+        "title": "Water pipeline burst in Sector 4",
+        "category": "Infrastructure",
+        "constituency": "Durgapur East",
+        "state": "West Bengal",
+        "upvotes": 45,
+        "comments_count": 20,
+        "created_at": time.time() - 1800  # Posted 30 mins ago
+    },
+    {
+        "id": 2,
+        "title": "Trash dumping near community park",
+        "category": "Environmental",
+        "constituency": "Durgapur East",
+        "state": "West Bengal",
+        "upvotes": 12,
+        "comments_count": 4,
+        "created_at": time.time() - 3600  # Posted 1 hour ago
+    },
+    {
+        "id": 3,
+        "title": "Stray dog safety concerns near schools",
+        "category": "Other",
+        "constituency": "Asansol",
+        "state": "West Bengal",
+        "upvotes": 85,
+        "comments_count": 40,
+        "created_at": time.time() - 7200  # Posted 2 hours ago
+    }
+]
+
+# Helper Function: Calculates interaction rate and ranks the feed entries
+def get_trending_posts(category=None, constituency=None, state=None):
+    scored_posts = []
+    
+    for post in POSTS_DATABASE:
+        # PRD Filter Sorting: Skip post if it doesn't match active filters
+        if category and post['category'].lower() != category.lower():
+            continue
+        if constituency and post['constituency'].lower() != constituency.lower():
+            continue
+        if state and post['state'].lower() != state.lower():
+            continue
+            
+        # Interaction Rate calculation: Total number of actions on the post
+        interaction_rate = post['upvotes'] + post['comments_count']
+        
+        # Create a shallow copy of the dictionary to append runtime analytics safely
+        post_entry = post.copy()
+        post_entry['interaction_rate'] = interaction_rate
+        scored_posts.append(post_entry)
+        
+    # PRD Requirement: Sort posts in decreasing order of interaction rate
+    trending_sorted = sorted(scored_posts, key=lambda x: x['interaction_rate'], reverse=True)
+    
+    # PRD Scope Check: Limit to the top 50 trending posts max per cycle
+    return trending_sorted[:50]
+
+# --- ROUTE 1: FETCH TRENDING TIMELINE SORTED BY INTERACTION VELOCITY ---
+@app.route('/api/v1/feed/trending', methods=['GET'])
+def fetch_trending_feed():
+    try:
+        # Read optional sorting filters passed via URL parameters
+        category = request.args.get('category')
+        constituency = request.args.get('constituency')
+        state = request.args.get('state')
+        
+        trending_list = get_trending_posts(category, constituency, state)
+        
+        return jsonify({
+            "status": "SUCCESS",
+            "cycle_refresh": "1 Hour",
+            "count": len(trending_list),
+            "feed": trending_list
+        }), 200
+        
+    except Exception as runtime_error:
+        return jsonify({"status": "ERROR", "error": str(runtime_error)}), 500
+
+# Interactive Dashboard Panel View
+@app.route('/')
+def trending_dashboard():
+    return '''
+        <div style="font-family: sans-serif; max-width: 550px; margin: 40px auto; padding: 30px; border: 1px solid #e83e8c; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
+            <h2 style="color: #e83e8c; margin-top: 0;"> Trending Feed Velocity Algorithm Panel</h2>
+            <p style="color: #666;">Calculating interaction loops and post ranking decreasing orders matching Row 12 criteria.</p>
+            <hr style="border: 0; border-top: 1px solid #e9ecef; margin: 20px 0;"/>
+            
+            <form action="/api/v1/feed/trending" method="GET" target="_blank" style="margin-bottom: 20px;">
+                <button type="submit" style="width: 100%; background: #e83e8c; color: white; border: none; padding: 12px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 15px;">
+                    View Raw Global Trending Feed Array
+                </button>
+            </form>
+
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #e83e8c;">
+                <h4 style="margin: 0 0 12px 0; color: #333;"> Test Filter Combinations:</h4>
+                <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Open these specific URL paths in a new browser tab to test your platform's built-in target filters:</p>
+                <ul style="padding-left: 20px; font-size: 14px; line-height: 1.8;">
+                    <li>Filter by Category: <a href="/api/v1/feed/trending?category=Infrastructure" target="_blank" style="color: #e83e8c; font-weight: bold; text-decoration: none;">/trending?category=Infrastructure</a></li>
+                    <li>Filter by Constituency: <a href="/api/v1/feed/trending?constituency=Asansol" target="_blank" style="color: #e83e8c; font-weight: bold; text-decoration: none;">/trending?constituency=Asansol</a></li>
+                </ul>
+            </div>
+        </div>
+    '''
+
+if __name__ == '__main__':
+    print(f"[TRENDING-SERVICE] Velocity algorithm running on port: {PORT}")
+    app.run(port=PORT)
