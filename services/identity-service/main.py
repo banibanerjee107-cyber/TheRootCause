@@ -323,3 +323,117 @@ async def health():
     finally:
         if conn:
             conn.close()
+p.route('/')
+def local_feed_dashboard():
+    return '''
+        <div style="font-family: sans-serif; max-width: 550px; margin: 40px auto; padding: 30px; border: 1px solid #17a2b8; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
+            <h2 style="color: #17a2b8; margin-top: 0;"> Local Feed Geofenced Gateway</h2>
+            <hr style="border: 0; border-top: 1px solid #e9ecef; margin: 20px 0;"/>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #17a2b8;">
+                <h4 style="margin: 0 0 12px 0; color: #333;"> Simulate Infinite Scroll & Lazy Loading:</h4>
+                <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Click these steps sequentially to watch the backend deliver small data chunks just like a real phone feed:</p>
+                <ul style="padding-left: 20px; font-size: 14px; line-height: 2;">
+                    <li><a href="/api/v1/feed/local?constituency=Dhanbad&page=1&limit=2" target="_blank" style="color: #17a2b8; font-weight: bold; text-decoration: none;">🔄 Step 1: Load Page 1 (Gets 2 Newest Posts, has_more: True)</a></li>
+                    <li><a href="/api/v1/feed/local?constituency=Dhanbad&page=2&limit=2" target="_blank" style="color: #17a2b8; font-weight: bold; text-decoration: none;">🔄 Step 2: Load Page 2 (Gets Last Remaining Post, has_more: False)</a></li>
+                </ul>
+            </div>
+        </div>
+    '''
+
+if __name__ == '__main__':
+    print(f"[LOCAL-FEED-SERVICE] Geofencing core online on port: {PORT}")
+    app.run(port=PORT)import time
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+PORT = 3008
+
+# Simulated active database populated with localized community complaints
+POSTS_DATABASE = [
+    {
+        "id": 1001,
+        "title": "Severe road waterlogging",
+        "category": "Environmental",
+        "street_address": "Near Gandhi Chowk, Main Bazaar",
+        "constituency": "Dhanbad",
+        "state": "Jharkhand",
+        "created_at": time.time() - 600  # Posted 10 mins ago (Newest)
+    },
+    {
+        "id": 1002,
+        "title": "Damaged open transformer box",
+        "category": "Infrastructure",
+        "street_address": "Opposite City Rail Gate",
+        "constituency": "Dhanbad",
+        "state": "Jharkhand",
+        "created_at": time.time() - 3600  # Posted 1 hour ago (Middle)
+    },
+    {
+        "id": 1003,
+        "title": "Garbage heap accumulation near hospital entrance",
+        "category": "Environmental",
+        "street_address": "Link Road, Block B",
+        "constituency": "Dhanbad",
+        "state": "Jharkhand",
+        "created_at": time.time() - 7200  # Posted 2 hours ago (Oldest)
+    },
+    {
+        "id": 1004,
+        "title": "Streetlight failure in A-Zone",
+        "category": "Infrastructure",
+        "street_address": "A-Zone High Street",
+        "constituency": "Durgapur",
+        "state": "West Bengal",
+        "created_at": time.time() - 1200  # Different constituency
+    }
+]
+
+# --- ROUTE 1: FETCH GEOCONSTRAINED LOCAL TIMELINE (LAZY LOAD ENFORCED) ---
+@app.route('/api/v1/feed/local', methods=['GET'])
+def fetch_local_feed():
+    try:
+        # 1. Read target locality and pagination boundaries from request parameters
+        constituency = request.args.get('constituency')
+        
+        # Pagination defaults: page 1, max 2 items per chunk to demonstrate lazy load
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 2))
+        
+        if not constituency:
+            return jsonify({
+                "status": "FAILED", 
+                "error": "Missing mandatory location tracking parameter: 'constituency' is required."
+            }), 400
+
+        # 2. Filter posts strictly matching the user's Assembly Constituency
+        local_records = [post for post in POSTS_DATABASE if post['constituency'].lower() == constituency.lower()]
+        
+        # 3. PRD Criteria: Sort records so recent submissions come on top (Decreasing Order)
+        local_records_sorted = sorted(local_records, key=lambda x: x['created_at'], reverse=True)
+        
+        # 4. Implement Infinite Scroll / Lazy Load segment slicing math
+        start_index = (page - 1) * limit
+        end_index = start_index + limit
+        paginated_slice = local_records_sorted[start_index:end_index]
+        
+        # Determine if additional database records remain downstream
+        has_more_records = end_index < len(local_records_sorted)
+
+        return jsonify({
+            "status": "SUCCESS",
+            "constituency_context": constituency,
+            "page_index": page,
+            "chunk_count": len(paginated_slice),
+            "infinite_scroll": {
+                "has_more": has_more_records,
+                "next_page": page + 1 if has_more_records else None
+            },
+            "feed": paginated_slice
+        }), 200
+        
+    except Exception as runtime_error:
+        return jsonify({"status": "ERROR", "error": str(runtime_error)}), 500
+
+# Interactive Dashboard Panel View
+@ap
