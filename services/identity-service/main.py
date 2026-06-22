@@ -323,3 +323,84 @@ async def health():
     finally:
         if conn:
             conn.close()
+from dotenv import load_dotenv
+load_dotenv()  # This loads the environment variables instantly
+"""
+@file admin_service.py
+@description Core State Machine Workflow Engine for Row 9: Admin Review.
+Designed to handle administrative validation states within the identity-service microservice container layer.
+"""
+
+import datetime
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+PORT = 3005
+
+# Simulated Data Store Layout (Acts as database transaction table stub models)
+SUBMISSIONS_DATABASE = [
+    {
+        "id": 101,
+        "reporter_email": "banibanerjee107@gmail.com",
+        "username": "banibanerjee107_4821",
+        "issue_description": "Open drainage leak damaging road structure near Binod Nagar.",
+        "status": "PENDING",  # Initial evaluation wrapper status state criteria
+        "reviewed_at": None,
+        "admin_remarks": None
+    }
+]
+
+# --- PIPELINE ROUTE 1: FETCH SUBMISSIONS FILTERED BY STATUS DATA FIELDS ---
+@app.route('/api/v1/admin/submissions', methods=['GET'])
+def get_admin_submissions_list():
+    # Enforces uppercase lookup boundary matching status options
+    target_status = request.args.get('status', 'PENDING').upper()
+    filtered_records = [record for record in SUBMISSIONS_DATABASE if record['status'] == target_status]
+    
+    return jsonify({
+        "status": "SUCCESS",
+        "count": len(filtered_records),
+        "submissions": filtered_records
+    }), 200
+
+# --- PIPELINE ROUTE 2: EXECUTE TRANSACTION WORKFLOW STATE MODIFICATION ---
+@app.route('/api/v1/admin/review/<int:submission_id>', methods=['POST'])
+def execute_submission_state_review(submission_id):
+    try:
+        payload = request.get_json()
+        
+        if not payload or 'action' not in payload:
+            return jsonify({"status": "FAILED", "error": "Invalid request payload parameters: 'action' is required."}), 400
+            
+        action = payload['action'].upper()  # Accepts structural values: 'APPROVE' or 'REJECT'
+        remarks = payload.get('remarks', 'No administrative comments attached.')
+        
+        # Locate target entry record matching submission query parameters
+        submission = next((item for item in SUBMISSIONS_DATABASE if item['id'] == submission_id), None)
+        if not submission:
+            return jsonify({"status": "FAILED", "error": f"Target entry record model ID {submission_id} not found."}), 404
+            
+        # Core State Machine Transition Logic
+        if action == 'APPROVE':
+            submission['status'] = 'APPROVED'
+        elif action == 'REJECT':
+            submission['status'] = 'REJECTED'
+        else:
+            return jsonify({"status": "FAILED", "error": "Action execution block parameters must read APPROVE or REJECT."}), 422
+            
+        # Stamp transactional verification metadata parameters
+        submission['reviewed_at'] = datetime.datetime.utcnow().isoformat() + "Z"
+        submission['admin_remarks'] = remarks
+
+        return jsonify({
+            "status": "SUCCESS",
+            "message": f"Submission state updated successfully to: {submission['status']}.",
+            "data": submission
+        }), 200
+
+    except Exception as runtime_error:
+        return jsonify({"status": "ERROR", "error": str(runtime_error)}), 500
+
+if __name__ == '__main__':
+    print(f"[ADMIN-SERVICE][SERVER] Core state process operational on port: {PORT}")
+    app.run(port=PORT)
